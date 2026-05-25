@@ -175,6 +175,16 @@ function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+function formatPathForDisplay(value) {
+  return value ? value.replace(/\\/g, "/") : "unknown";
+}
+
+function firstEnvironmentWarning() {
+  return Array.isArray(app.data?.environmentWarnings) && app.data.environmentWarnings.length > 0
+    ? app.data.environmentWarnings[0]
+    : "";
+}
+
 function buildLookups(data) {
   app.stateByName.clear();
   app.colorToState = Object.create(null);
@@ -626,8 +636,13 @@ function renderSummary() {
   elements.statStates.textContent = formatNumber(summary.states);
   elements.statProvinces.textContent = formatNumber(summary.provinces);
   elements.statSpecial.textContent = formatNumber(summary.specialProvinces);
+  const contentLoad = app.data.contentLoadStatus;
+  const contentLoadText = contentLoad && contentLoad.files.length > 0
+    ? `content_load: ${contentLoad.enabledHere ? "this mod enabled" : "this mod not enabled"}`
+    : "content_load: not found";
+  const warning = firstEnvironmentWarning();
   elements.sourceLine.textContent =
-    `State regions: ${summary.activeStateRegionFiles} active, ${summary.referenceStateRegionFiles} reference; history: ${summary.activeHistoryStateFile || 0} active; provinces image: ${app.data.image.source}${app.data.gameWriteSafety && !app.data.gameWriteSafety.safe ? "; save disabled: mod path is not ASCII-only" : ""}`;
+    `Mod: ${formatPathForDisplay(app.data.modRoot)}; state regions: ${summary.activeStateRegionFiles} active, ${summary.referenceStateRegionFiles} reference; history: ${summary.activeHistoryStateFile || 0} active; provinces image: ${app.data.image.source}; ${contentLoadText}${app.data.gameWriteSafety && !app.data.gameWriteSafety.safe ? "; save disabled: mod path is not ASCII-only" : ""}${warning ? `; warning: ${warning}` : ""}`;
 }
 
 function sortedStates() {
@@ -702,7 +717,8 @@ function renderDetails() {
     elements.selectedTitle.textContent = "No state selected";
     elements.selectedMeta.textContent = "Click a state in the list, a special marker, or a province on the map.";
     elements.selectedProvince.textContent = "Province: none";
-    setEditStatus("Select a state to edit its province membership.");
+    const warning = firstEnvironmentWarning();
+    setEditStatus(warning || "Select a state to edit its province membership.", warning ? "warning" : "");
     elements.freeListMeta.textContent = "No state selected";
     renderEmpty(elements.specialList, "No state selected");
     renderEmpty(elements.provinceList, "No state selected");

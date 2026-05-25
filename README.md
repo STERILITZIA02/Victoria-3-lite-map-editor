@@ -100,6 +100,10 @@ C:/Users/YourName/Paradox Interactive/Victoria 3/mod/Victoria-3-lite-map-editor/
     vanilla_1_13_6_reference/
 ```
 
+  If you are creating a new standalone local mod, copy the whole folder. If you are adding the editor to an existing mod, copy `tools/` and optionally `start-editor.cmd`, but keep that mod's existing `.metadata/metadata.json`. Overwriting an existing mod's metadata changes how the Paradox Launcher identifies the mod and can make the game load a different folder than the one the editor saves to.
+
+  The packaged `.metadata/metadata.json` intentionally leaves `id` blank for local use. This avoids giving every pasted local copy the same global metadata id.
+
 Option B: Clone with Git
 
 ```powershell
@@ -149,13 +153,14 @@ node server.js --open --port=8799
 
 1. Start the editor.
 2. Select a state from the left list or click a province on the map.
-3. The map view will dim unrelated states and keep the selected state plus free provinces visible.
-4. Click a province that belongs to the selected state and choose `Make province free`.
-5. Click a free province and choose `Add xRRGGBB to STATE_NAME`.
-6. The editor validates the whole draft after the action.
-7. If the draft is compliant, the tool saves automatically.
-8. If the draft is invalid, the tool shows a blocking alert and does not write files.
-9. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
+3. Check the top source line. It shows the exact mod folder being edited and whether known `content_load.json` files enable that same folder.
+4. The map view will dim unrelated states and keep the selected state plus free provinces visible.
+5. Click a province that belongs to the selected state and choose `Make province free`.
+6. Click a free province and choose `Add xRRGGBB to STATE_NAME`.
+7. The editor validates the whole draft after the action.
+8. If the draft is compliant, the tool saves automatically.
+9. If the draft is invalid, the tool shows a blocking alert and does not write files.
+10. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
 
 A province cannot remain free unless it is a reserved lake province listed in `map_data/default.map`. Normal land provinces must belong to exactly one state before saving.
 
@@ -198,7 +203,7 @@ The bundled reference data and the editor itself are not deleted. After reset, t
 
 | Path or format | Read/write | Purpose |
 | --- | --- | --- |
-| `.metadata/metadata.json` | Read by launcher | Makes this folder visible as a local Victoria 3 mod. |
+| `.metadata/metadata.json` | Read by launcher | Makes this folder visible as a local Victoria 3 mod. The packaged local metadata keeps `id` blank to avoid duplicate ids across pasted copies. |
 | `map_data/state_regions/*.txt` | Read/write | Main state-region definitions. The editor moves province IDs in `provinces = { ... }`. |
 | `common/history/states/00_states.txt` | Write when needed | Initial state ownership sync for moved owned provinces. |
 | `map_data/provinces.png` | Read-only | RGB province color map used for visual picking and boundaries. |
@@ -239,8 +244,9 @@ Common problems:
 | --- | --- | --- |
 | Save button/action is blocked with a path warning | The mod folder path contains non-ASCII characters | Move the mod or change `gameDataPath` to an ASCII-only path. |
 | The browser shows old behavior after code updates | Old server process is still running | Close the terminal/server and restart `node server.js --open`. |
-| `http://127.0.0.1:8793/` is already in use | Another viewer is running on that port | Start with `node server.js --open --port=8799`. |
-| Game still shows vanilla map | Launcher/playset points at a different copy of the mod | Check `content_load.json` and the active playset path in the launcher. |
+| `http://127.0.0.1:8793/` is already in use | Another viewer is running on that port | With the bundled server, the default start command automatically tries the next free port. You can also start with `node server.js --open --port=8799`. |
+| Game still shows vanilla map | Launcher/playset points at a different copy of the mod | Check the editor top source line, `content_load.json`, and the active playset path in the launcher. |
+| A copied editor saves but the game loads another local mod | Existing `.metadata` was overwritten, or the active playset still points at the old folder | Restore the intended mod metadata, then enable the same folder shown in the editor top source line. |
 | Large white/blank state areas in game | A generated state-region override failed to load | Check non-ASCII path, malformed `.txt`, missing braces, or wrong game version reference. Use `Reset Vanilla` to recover. |
 | Errors mention missing or invalid state regions | `map_data/state_regions/*.txt` override is malformed or unreadable | Reset, verify path, and retry with a smaller province move. |
 | History/building/pop errors appear after state edits | Ownership/history no longer matches moved provinces | Keep `common/history/states/00_states.txt` generated by the editor, then start a new game. |
@@ -405,6 +411,10 @@ C:/Users/YourName/Paradox Interactive/Victoria 3/mod/Victoria-3-lite-map-editor/
     vanilla_1_13_6_reference/
 ```
 
+  如果你要创建一个新的独立本地 mod，可以复制整个文件夹。如果你要把编辑器加入已有 mod，请复制 `tools/`，并按需要复制 `start-editor.cmd`，但保留该 mod 原本的 `.metadata/metadata.json`。覆盖已有 mod 的 metadata 会改变 Paradox Launcher 识别这个 mod 的方式，可能导致游戏加载的文件夹和编辑器保存的文件夹不是同一个。
+
+  本包的 `.metadata/metadata.json` 会故意把 `id` 留空，适合本地复制使用。这样可以避免每个粘贴出来的本地副本都拥有同一个全局 metadata id。
+
 方式 B：使用 Git clone
 
 ```powershell
@@ -454,13 +464,14 @@ node server.js --open --port=8799
 
 1. 启动编辑器。
 2. 从左侧 state 列表选择一个 state，或在地图上点击 province。
-3. 选择 state 后，地图会遮罩无关 state，只保留 selected state 和 free province。
-4. 点击 selected state 内的 province，选择 `Make province free`。
-5. 点击 free province，选择 `Add xRRGGBB to STATE_NAME`。
-6. 工具会在每次操作后校验整个草稿。
-7. 如果草稿合规，会自动保存。
-8. 如果草稿不合规，会弹出提示并阻止写入文件。
-9. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
+3. 先检查页面顶部 source line。它会显示正在编辑的准确 mod 文件夹，以及已知 `content_load.json` 是否启用了同一个文件夹。
+4. 选择 state 后，地图会遮罩无关 state，只保留 selected state 和 free province。
+5. 点击 selected state 内的 province，选择 `Make province free`。
+6. 点击 free province，选择 `Add xRRGGBB to STATE_NAME`。
+7. 工具会在每次操作后校验整个草稿。
+8. 如果草稿合规，会自动保存。
+9. 如果草稿不合规，会弹出提示并阻止写入文件。
+10. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
 
 普通陆地 province 不能长期处于 free 状态。只有 `map_data/default.map` 中列出的 reserved lake province 可以保持未分配。所有普通 province 在保存前必须且只能属于一个 state。
 
@@ -503,7 +514,7 @@ common/history/states/00_states.txt
 
 | 路径或格式 | 读写方式 | 用途 |
 | --- | --- | --- |
-| `.metadata/metadata.json` | launcher 读取 | 让该文件夹显示为 Victoria 3 本地 mod。 |
+| `.metadata/metadata.json` | launcher 读取 | 让该文件夹显示为 Victoria 3 本地 mod。本包的本地 metadata 会把 `id` 留空，避免多个粘贴副本共享同一个 id。 |
 | `map_data/state_regions/*.txt` | 读写 | state region 定义。工具移动 `provinces = { ... }` 中的 province ID。 |
 | `common/history/states/00_states.txt` | 需要时写入 | 同步被移动 province 的开局 ownership。 |
 | `map_data/provinces.png` | 只读 | RGB province 色彩图，用于地图点击、边界和可视化。 |
@@ -544,8 +555,9 @@ Victoria 3 脚本 `.txt` 文件应使用 UTF-8。内置 vanilla 文件来自游�
 | --- | --- | --- |
 | 保存被路径警告阻止 | mod 文件夹路径包含非 ASCII 字符 | 移动 mod，或把 `gameDataPath` 改到纯 ASCII 路径。 |
 | 浏览器显示旧行为 | 旧 server 进程还在运行 | 关闭旧终端/server，重新运行 `node server.js --open`。 |
-| `http://127.0.0.1:8793/` 被占用 | 已有另一个 viewer 使用该端口 | 使用 `node server.js --open --port=8799`。 |
-| 游戏内仍是原版地图 | launcher/playset 指向另一个 mod 副本 | 检查 `content_load.json` 和 launcher 当前 playset 的 mod 路径。 |
+| `http://127.0.0.1:8793/` 被占用 | 已有另一个 viewer 使用该端口 | 本包 server 的默认启动命令会自动尝试下一个空闲端口。也可以手动使用 `node server.js --open --port=8799`。 |
+| 游戏内仍是原版地图 | launcher/playset 指向另一个 mod 副本 | 检查编辑器顶部 source line、`content_load.json` 和 launcher 当前 playset 的 mod 路径。 |
+| 复制出来的编辑器能保存，但游戏加载另一个本地 mod | 覆盖了已有 `.metadata`，或 active playset 仍指向旧文件夹 | 恢复目标 mod 原本的 metadata，然后在 launcher 中启用编辑器顶部 source line 显示的同一个文件夹。 |
 | 游戏内大片白色/空白 state | 生成的 state-region override 没有被正确加载 | 检查非 ASCII 路径、`.txt` 格式、括号、游戏版本 reference。必要时使用 `Reset Vanilla` 恢复。 |
 | 日志出现 missing/invalid state region | `map_data/state_regions/*.txt` 覆盖文件格式错误或不可读 | Reset 后重新尝试更小的 province 移动。 |
 | state 编辑后出现 history/building/pop 错误 | province 归属和开局 ownership 不一致 | 保留工具生成的 `common/history/states/00_states.txt`，并开新游戏测试。 |

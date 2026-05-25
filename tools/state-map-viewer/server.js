@@ -3,13 +3,16 @@ const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
-const PORT = Number(process.env.PORT || process.argv.find((arg) => arg.startsWith("--port="))?.split("=")[1] || 8793);
+const requestedPortArg = process.argv.find((arg) => arg.startsWith("--port="));
+const REQUESTED_PORT = Number(process.env.PORT || requestedPortArg?.split("=")[1] || 8793);
+const PORT_WAS_EXPLICIT = Boolean(process.env.PORT || requestedPortArg);
 const SHOULD_OPEN = process.argv.includes("--open");
 
 // The release package is meant to sit directly inside a Victoria 3 mod folder.
-// From tools/state-map-viewer, two parent hops point at the mod root.
+// The server walks up to the nearest .metadata/metadata.json so users can paste
+// the tool into an existing mod without changing scripts or environment vars.
 const toolRoot = __dirname;
-const modRoot = path.resolve(process.env.VIC3_MOD_ROOT || path.resolve(toolRoot, "..", ".."));
+const modRoot = path.resolve(process.env.VIC3_MOD_ROOT || findNearestModRoot(toolRoot));
 // Bundled vanilla 1.13.6 data lets the editor work before the mod contains any map overrides.
 const referenceRoot = path.resolve(process.env.VIC3_REFERENCE_ROOT || path.join(modRoot, "tools", "vanilla_1_13_6_reference", "game"));
 const publicRoot = path.join(toolRoot, "public");
@@ -53,6 +56,21 @@ function safeJoin(root, requestPath) {
   return resolved;
 }
 
+function findNearestModRoot(start) {
+  let current = path.resolve(start);
+  while (true) {
+    if (fileExists(path.join(current, ".metadata", "metadata.json"))) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return path.resolve(start, "..", "..");
+}
+
 function fileExists(filePath) {
   try {
     return fs.statSync(filePath).isFile();
@@ -88,6 +106,120 @@ function gameWriteSafety() {
 function assertGameWriteSafe() {
   const safety = gameWriteSafety();
   if (!safety.safe) throw new Error(safety.reason);
+}
+
+function sameFilesystemPath(left, right) {
+  if (!left || !right) return false;
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  if (process.platform === "win32") {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+  return normalizedLeft === normalizedRight;
+}
+
+function uniquePaths(paths) {
+  const seen = new Set();
+  const result = [];
+  for (const value of paths) {
+    if (!value) continue;
+    const resolved = path.resolve(value);
+    const key = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(resolved);
+  }
+  return result;
+}
+
+function knownGameDataRoots() {
+  const roots = [path.resolve(modRoot, "..", "..")];
+  const userRoot = process.env.USERPROFILE || process.env.HOME;
+  if (userRoot) {
+    roots.push(path.join(userRoot, "Paradox Interactive", "Victoria 3"));
+    roots.push(path.join(userRoot, "Documents", "Paradox Interactive", "Victoria 3"));
+    const oneDriveRoot = process.env.OneDrive || path.join(userRoot, "OneDrive");
+    roots.push(path.join(oneDriveRoot, "Documents", "Paradox Interactive", "Victoria 3"));
+    roots.push(path.join(oneDriveRoot, "\u6587\u6863", "Paradox Interactive", "Victoria 3"));
+  }
+  return uniquePaths(roots);
+}
+
+function readJsonFile(filePath) {
+  try {
+    return { ok: true, value: JSON.parse(fs.readFileSync(filePath, "utf8")) };
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
+  }
+}
+
+function readModMetadata() {
+  const filePath = path.join(modRoot, ".metadata", "metadata.json");
+  if (!fileExists(filePath)) return { exists: false, path: filePath };
+
+  const parsed = readJsonFile(filePath);
+  if (!parsed.ok) return { exists: true, path: filePath, error: parsed.error };
+  return {
+    exists: true,
+    path: filePath,
+    name: parsed.value.name || null,
+    id: parsed.value.id || "",
+    supportedGameVersion: parsed.value.supported_game_version || null,
+  };
+}
+
+function resolveContentLoadPath(root, modPath) {
+  if (typeof modPath !== "string" || modPath.trim() === "") return null;
+  return path.isAbsolute(modPath) ? path.resolve(modPath) : path.resolve(root, modPath);
+}
+
+function buildContentLoadStatus() {
+  const files = [];
+  for (const root of knownGameDataRoots()) {
+    const filePath = path.join(root, "content_load.json");
+    if (!fileExists(filePath)) continue;
+
+    const parsed = readJsonFile(filePath);
+    if (!parsed.ok) {
+      files.push({ root, path: filePath, enabledMods: [], enabledHere: false, error: parsed.error });
+      continue;
+    }
+
+    const enabledMods = Array.isArray(parsed.value.enabledMods) ? parsed.value.enabledMods : [];
+    const enabledPaths = enabledMods
+      .map((entry) => resolveContentLoadPath(root, entry && entry.path))
+      .filter(Boolean);
+    files.push({
+      root,
+      path: filePath,
+      enabledMods: enabledPaths,
+      enabledHere: enabledPaths.some((enabledPath) => sameFilesystemPath(enabledPath, modRoot)),
+    });
+  }
+
+  const enabledHere = files.some((file) => file.enabledHere);
+  const otherEnabledMods = files
+    .flatMap((file) => file.enabledMods.map((enabledPath) => ({ contentLoad: file.path, path: enabledPath })))
+    .filter((entry) => !sameFilesystemPath(entry.path, modRoot));
+
+  return { files, enabledHere, otherEnabledMods };
+}
+
+function buildEnvironmentWarnings(metadata, contentLoadStatus) {
+  const warnings = [];
+  if (!metadata.exists) {
+    warnings.push("No .metadata/metadata.json was found for this mod root; the Paradox Launcher may not recognize this folder as a local mod.");
+  } else if (metadata.error) {
+    warnings.push(`Could not parse .metadata/metadata.json: ${metadata.error}`);
+  }
+
+  if (contentLoadStatus.files.length > 0 && !contentLoadStatus.enabledHere) {
+    warnings.push("Known content_load.json files do not enable this mod root. Victoria 3 may load a different mod folder than the one being edited.");
+  } else if (contentLoadStatus.otherEnabledMods.length > 0) {
+    warnings.push("At least one known content_load.json also enables a different local mod folder. If in-game changes do not appear, confirm the launcher active playset uses this mod root.");
+  }
+
+  return warnings;
 }
 
 function preferredGameFile(relativePath) {
@@ -758,11 +890,17 @@ function buildMapData() {
   const image = preferredGameFile(path.join("map_data", "provinces.png"));
 
   const safety = gameWriteSafety();
+  const metadata = readModMetadata();
+  const contentLoadStatus = buildContentLoadStatus();
+  const environmentWarnings = buildEnvironmentWarnings(metadata, contentLoadStatus);
 
   return {
     generatedAt: new Date().toISOString(),
     modRoot,
     referenceRoot,
+    metadata,
+    contentLoadStatus,
+    environmentWarnings,
     image: {
       url: "/assets/provinces.png",
       source: image.source,
@@ -1000,11 +1138,33 @@ const server = http.createServer((request, response) => {
   sendFile(response, staticPath);
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  const url = `http://127.0.0.1:${PORT}`;
-  console.log(`Victoria 3 state map viewer running at ${url}`);
-  console.log(`Mod root: ${modRoot}`);
-  if (SHOULD_OPEN) {
-    childProcess.exec(`start "" "${url}"`);
-  }
-});
+function startServer(port, attempts = 0) {
+  const onListening = () => {
+    server.off("error", onError);
+    const url = `http://127.0.0.1:${port}`;
+    console.log(`Victoria 3 state map viewer running at ${url}`);
+    console.log(`Mod root: ${modRoot}`);
+    if (SHOULD_OPEN) {
+      childProcess.exec(`start "" "${url}"`);
+    }
+  };
+
+  const onError = (error) => {
+    server.off("listening", onListening);
+    if (error.code === "EADDRINUSE" && !PORT_WAS_EXPLICIT && attempts < 20) {
+      const nextPort = port + 1;
+      console.warn(`Port ${port} is already in use; trying ${nextPort}.`);
+      startServer(nextPort, attempts + 1);
+      return;
+    }
+
+    console.error(error.stack || error.message || String(error));
+    process.exitCode = 1;
+  };
+
+  server.once("error", onError);
+  server.once("listening", onListening);
+  server.listen(port, "127.0.0.1");
+}
+
+startServer(REQUESTED_PORT);
