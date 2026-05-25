@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Victoria 3 State Map Viewer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="loading-overlay" id="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-panel">
+        <div class="loading-title">Loading Victoria 3 map data</div>
+        <div class="loading-text" id="loading-text">Preparing viewer</div>
+        <div class="progress-track" aria-hidden="true">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="loading-detail" id="loading-detail">0%</div>
+      </div>
+    </div>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="project-kicker">From the project - version 0.1.0 - Victoria 3 1.13.6</div>
+          <h1>Victoria 3 State Map Viewer</h1>
+          <div class="project-links" aria-label="Project links">
+            <a href="https://github.com/STERILITZIA02/Victoria-3-lite-map-editor" target="_blank" rel="noreferrer">Victoria-3-lite-map-editor</a>
+            <span>Author: <a href="https://github.com/STERILITZIA02" target="_blank" rel="noreferrer">STERILITZIA02</a></span>
+            <span>Need changes? <a href="https://github.com/STERILITZIA02/Victoria-3-lite-map-editor/issues" target="_blank" rel="noreferrer">Open an issue</a></span>
+          </div>
+          <p id="source-line">Waiting for map data</p>
+        </div>
+        <div class="top-stats" aria-label="Map summary">
+          <span><strong id="stat-states">0</strong> states</span>
+          <span><strong id="stat-provinces">0</strong> provinces</span>
+          <span><strong id="stat-special">0</strong> special</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar" aria-label="State list">
+          <div class="panel-title">States</div>
+          <label class="search-field">
+            <span>Search</span>
+            <input id="state-search" type="search" autocomplete="off" placeholder="STATE_FRANCE, x12AB34, id">
+          </label>
+          <div class="list-meta" id="state-list-meta">No states loaded</div>
+          <div class="state-list" id="state-list"></div>
+        </aside>
+
+        <section class="map-section" aria-label="World map">
+          <div class="map-toolbar">
+            <button type="button" class="icon-button" data-action="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            <button type="button" class="icon-button" data-action="zoom-out" title="Zoom out" aria-label="Zoom out">-</button>
+            <button type="button" class="icon-button" data-action="fit-world" title="Fit world" aria-label="Fit world">[]</button>
+            <button type="button" class="text-button" data-action="reset" title="Reset view">Reset</button>
+            <button type="button" class="text-button" data-action="clear-selection" title="Clear selected state and province">Clear Selection</button>
+            <button type="button" class="text-button danger-button" data-action="reset-vanilla" title="Remove active state-region overrides">Reset Vanilla</button>
+            <label class="toggle-field">
+              <input id="toggle-boundaries" type="checkbox" checked>
+              <span>Boundaries</span>
+            </label>
+            <label class="toggle-field">
+              <input id="toggle-markers" type="checkbox" checked>
+              <span>Special provinces</span>
+            </label>
+            <div class="legend">
+              <span><i class="legend-province"></i>Province edge</span>
+              <span><i class="legend-state"></i>State edge</span>
+            </div>
+          </div>
+
+          <div class="map-viewport" id="map-viewport" tabindex="0">
+            <div class="map-world" id="map-world">
+              <img id="province-image" alt="Victoria 3 province color map" draggable="false">
+              <canvas id="boundary-canvas" aria-hidden="true"></canvas>
+              <canvas id="filter-canvas" aria-hidden="true"></canvas>
+              <div class="focus-box" id="focus-box" hidden></div>
+              <div class="markers-layer" id="markers-layer" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="map-status">
+            <span id="hover-readout">Move over the map to inspect a province.</span>
+            <span id="zoom-readout">Zoom 100%</span>
+          </div>
+        </section>
+
+        <aside class="details" aria-label="Selection details">
+          <div class="panel-title">Selection</div>
+          <h2 id="selected-title">No state selected</h2>
+          <div class="selected-meta" id="selected-meta">Click a state in the list, a special marker, or a province on the map.</div>
+          <div class="selected-province" id="selected-province">Province: none</div>
+          <div class="edit-status" id="edit-status">Select a state to edit its province membership.</div>
+          <div class="edit-actions" id="edit-actions"></div>
+
+          <div class="detail-group">
+            <h3>Special Provinces</h3>
+            <div class="special-list" id="special-list"></div>
+          </div>
+
+          <div class="detail-group">
+            <h3>Provinces</h3>
+            <div class="province-list" id="province-list"></div>
+          </div>
+
+          <div class="detail-group">
+            <h3>Free Provinces</h3>
+            <div class="free-list-meta" id="free-list-meta">No state selected</div>
+            <div class="free-province-list" id="free-province-list"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

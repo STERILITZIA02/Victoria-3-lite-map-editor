@@ -1,0 +1,27 @@
+# Runtime/editor noise
+logs/
+generated/
+shadercache/
+crashes/
+dumps/
+exceptions/
+save games/
+
+# Node/editor local files
+node_modules/
+.env
+*.log
+*.tmp
+*.bak
+*.backup
+*.copilot-backup-*
+
+# OS/editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep generated Victoria 3 mod content trackable on purpose:
+# map_data/state_regions/*.txt
+# common/history/states/*.txt
