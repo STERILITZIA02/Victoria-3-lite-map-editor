@@ -43,7 +43,99 @@ const contentTypes = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
+  ".zip": "application/zip",
 };
+
+const crcTable = buildCrcTable();
+
+function buildCrcTable() {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < table.length; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xEDB88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+}
+
+function crc32(buffer) {
+  let value = 0xFFFFFFFF;
+  for (const byte of buffer) {
+    value = crcTable[(value ^ byte) & 0xFF] ^ (value >>> 8);
+  }
+  return (value ^ 0xFFFFFFFF) >>> 0;
+}
+
+function zipDateTime(date) {
+  return {
+    date: ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+  };
+}
+
+function createZipArchive(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name.replace(/\\/g, "/"), "utf8");
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data);
+    const checksum = crc32(data);
+    const dateTime = zipDateTime(entry.mtime || new Date());
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034B50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(dateTime.time, 10);
+    local.writeUInt16LE(dateTime.date, 12);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014B50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(dateTime.time, 12);
+    central.writeUInt16LE(dateTime.date, 14);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+
+    offset += local.length + name.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054B50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, ...centralParts, end]);
+}
 
 function safeJoin(root, requestPath) {
   const decoded = decodeURIComponent(requestPath);
@@ -848,6 +940,38 @@ function resetStateRegionOverrides() {
   return removedFiles;
 }
 
+function listMapExportFiles() {
+  const files = [];
+  const activeDir = path.join(modRoot, "map_data", "state_regions");
+
+  if (directoryExists(activeDir)) {
+    for (const entry of fs.readdirSync(activeDir).filter((item) => item.toLowerCase().endsWith(".txt")).sort()) {
+      const filePath = path.join(activeDir, entry);
+      if (!fileExists(filePath)) continue;
+      files.push({ filePath, relativePath: path.relative(modRoot, filePath) });
+    }
+  }
+
+  const activeHistoryPath = path.join(modRoot, historyStatesRelativePath);
+  if (fileExists(activeHistoryPath)) {
+    files.push({ filePath: activeHistoryPath, relativePath: historyStatesRelativePath });
+  }
+
+  return files.map((file) => {
+    const stat = fs.statSync(file.filePath);
+    return {
+      name: file.relativePath.replace(/\\/g, "/"),
+      data: fs.readFileSync(file.filePath),
+      mtime: stat.mtime,
+    };
+  });
+}
+
+function exportFileName() {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+  return `vic3-lite-map-export-${stamp}.zip`;
+}
+
 function buildMapData() {
   const files = listMergedStateRegionFiles();
   const historyFile = preferredGameFile(historyStatesRelativePath);
@@ -916,9 +1040,10 @@ function buildMapData() {
     reservedProvinces: buildReservedProvinces(),
     gameWriteSafety: safety,
     capabilities: {
-      schemaVersion: 5,
+      schemaVersion: 6,
       saveStateRegions: true,
       resetStateRegions: true,
+      exportMap: true,
       reservedProvinces: true,
       specialReassignment: true,
       historyOwnershipSync: true,
@@ -1081,6 +1206,28 @@ async function handleResetStateRegions(response) {
   }
 }
 
+function handleExportMap(response) {
+  try {
+    const entries = listMapExportFiles();
+    if (entries.length === 0) {
+      sendError(response, 404, "No saved map override files were found. Save an edit before exporting.");
+      return;
+    }
+
+    const archive = createZipArchive(entries);
+    const fileName = exportFileName();
+    response.writeHead(200, {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${fileName}"`,
+      "Content-Length": archive.length,
+      "Cache-Control": "no-store",
+    });
+    response.end(archive);
+  } catch (error) {
+    sendError(response, 500, error.message || String(error));
+  }
+}
+
 function sendFile(response, filePath) {
   fs.stat(filePath, (error, stat) => {
     if (error || !stat.isFile()) {
@@ -1109,6 +1256,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/reset-state-regions") {
     handleResetStateRegions(response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/export-map") {
+    handleExportMap(response);
     return;
   }
 

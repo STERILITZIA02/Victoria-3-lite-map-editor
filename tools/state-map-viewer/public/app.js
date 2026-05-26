@@ -187,6 +187,11 @@ function firstEnvironmentWarning() {
     : "";
 }
 
+function downloadNameFromContentDisposition(value) {
+  const match = /filename="?([^";]+)"?/i.exec(value || "");
+  return match ? match[1] : null;
+}
+
 function buildLookups(data) {
   app.stateByName.clear();
   app.colorToState = Object.create(null);
@@ -241,7 +246,7 @@ async function readJsonResponse(response, operation) {
 }
 
 function assertCompatibleMapData(data) {
-  if (!data.capabilities || data.capabilities.schemaVersion < 5 || !data.capabilities.resetStateRegions || !data.capabilities.reservedProvinces || !data.capabilities.historyOwnershipSync || !data.capabilities.sortedStateRegionProvinces) {
+  if (!data.capabilities || data.capabilities.schemaVersion < 6 || !data.capabilities.resetStateRegions || !data.capabilities.reservedProvinces || !data.capabilities.historyOwnershipSync || !data.capabilities.sortedStateRegionProvinces || !data.capabilities.exportMap) {
     throw new Error("Viewer server is stale. Stop the old server process and restart tools/state-map-viewer/server.js, then reload this page.");
   }
   if (!data.reservedProvinces || typeof data.reservedProvinces !== "object") {
@@ -638,6 +643,35 @@ async function resetToVanillaStateRegions() {
   } finally {
     app.saving = false;
     renderDetails();
+  }
+}
+
+async function exportEditedMap() {
+  if (app.saving) {
+    setEditStatus("Wait for the current save to finish before exporting.", "warning");
+    return;
+  }
+
+  setEditStatus("Preparing map export...", "warning");
+  try {
+    const response = await fetch("/api/export-map", { cache: "no-store" });
+    if (!response.ok) await readJsonResponse(response, "Export");
+
+    const blob = await response.blob();
+    const fileName = downloadNameFromContentDisposition(response.headers.get("Content-Disposition")) || "vic3-lite-map-export.zip";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setEditStatus(`Exported ${fileName}.`, "ok");
+  } catch (error) {
+    const message = error.message || String(error);
+    setEditStatus(message, "error");
+    alert(message);
   }
 }
 
@@ -1184,6 +1218,10 @@ function wireEvents() {
       const cy = rect.top + rect.height / 2;
       if (action === "reset-vanilla") {
         await resetToVanillaStateRegions();
+        return;
+      }
+      if (action === "export-map") {
+        await exportEditedMap();
         return;
       }
       if (action === "clear-selection") {

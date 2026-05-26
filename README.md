@@ -34,6 +34,7 @@ It can:
 - Move provinces from a state into the free pool.
 - Add free provinces into the selected state.
 - Automatically save after valid edits.
+- Export saved map and history override files as a downloadable ZIP.
 - Block saving when the draft contains duplicate provinces, non-lake free provinces, invalid special province fields, or unsafe paths.
 - Reassign special province roles when possible, including `city`, `farm`, `mine`, `wood`, `port`, `center_province`, `prime_land`, and `impassable`.
 - Sync initial ownership in `common/history/states/00_states.txt` when an owned province is moved between states.
@@ -160,7 +161,8 @@ node server.js --open --port=8799
 7. The editor validates the whole draft after the action.
 8. If the draft is compliant, the tool saves automatically.
 9. If the draft is invalid, the tool shows a blocking alert and does not write files.
-10. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
+10. Click `Export Map` to download the saved override files as a ZIP when you want to move or share the edited map.
+11. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
 
 A province cannot remain free unless it is a reserved lake province listed in `map_data/default.map`. Normal land provinces must belong to exactly one state before saving.
 
@@ -187,6 +189,15 @@ common/history/states/00_states.txt
 ```
 
 This keeps `owned_provinces` aligned with the changed state-region membership and reduces state/history loading errors.
+
+`Export Map` downloads the currently saved active overrides from the mod root:
+
+```text
+map_data/state_regions/*.txt
+common/history/states/00_states.txt
+```
+
+It does not export the editor, bundled reference data, or unedited vanilla files.
 
 ### Reset Vanilla
 
@@ -345,6 +356,7 @@ map_data/state_regions/*.txt
 - 把 selected state 内的 province 移到 free pool。
 - 把 free province 加入 selected state。
 - 在修改合规时自动保存。
+- 将已保存的地图和历史覆盖文件导出为可下载 ZIP。
 - 在草稿有重复 province、普通 province 未分配、special province 不合法、路径不安全等问题时阻止保存。
 - 自动处理部分 special province 角色，包括 `city`、`farm`、`mine`、`wood`、`port`、`center_province`、`prime_land`、`impassable`。
 - 当被移动 province 在开局历史中有 owner 时，同步写入 `common/history/states/00_states.txt`。
@@ -471,7 +483,8 @@ node server.js --open --port=8799
 7. 工具会在每次操作后校验整个草稿。
 8. 如果草稿合规，会自动保存。
 9. 如果草稿不合规，会弹出提示并阻止写入文件。
-10. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
+10. 需要移动或分享编辑完成的地图时，点击 `Export Map` 下载已保存覆盖文件 ZIP。
+11. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
 
 普通陆地 province 不能长期处于 free 状态。只有 `map_data/default.map` 中列出的 reserved lake province 可以保持未分配。所有普通 province 在保存前必须且只能属于一个 state。
 
@@ -490,6 +503,15 @@ Victoria 3/game/map_data/state_regions/15_russia.txt
 ```
 
 因此本工具会复制受影响的 reference/active 文件，只替换其中被编辑的 `STATE_*` 区块，然后把整份文件写入当前 mod。没有被编辑到的 state-region 文件不会被生成。
+
+`Export Map` 会从当前 mod root 下载已保存的 active override：
+
+```text
+map_data/state_regions/*.txt
+common/history/states/00_states.txt
+```
+
+它不会导出编辑器、内置 reference 数据或未编辑的原版文件。
 
 当移动的 province 在开局历史中有 owner 时，工具还会写入：
 

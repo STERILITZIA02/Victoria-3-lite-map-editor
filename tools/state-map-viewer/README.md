@@ -42,5 +42,7 @@ Features:
 - Draws thicker dark province boundaries and thinner gold state boundaries.
 - Marks special state-region provinces: city, farm, mine, wood, port,
   center_province, prime_land, and impassable.
+- Exports saved `map_data/state_regions/*.txt` and
+    `common/history/states/00_states.txt` overrides as a ZIP.
 - Supports mouse-wheel zoom, drag panning, state search, state fitting,
   province click inspection, and province/state detail panels.
