@@ -640,8 +640,20 @@ input {
   font-size: 12px;
 }
 
+.free-section-title {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .free-province-list {
-  max-height: min(24vh, 220px);
+  max-height: min(18vh, 160px);
+}
+
+.lake-province-list {
+  max-height: min(16vh, 140px);
 }
 
 .province-chip,

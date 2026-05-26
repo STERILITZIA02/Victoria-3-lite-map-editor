@@ -34,6 +34,8 @@ const elements = {
   provinceList: document.getElementById("province-list"),
   freeListMeta: document.getElementById("free-list-meta"),
   freeProvinceList: document.getElementById("free-province-list"),
+  lakeListMeta: document.getElementById("lake-list-meta"),
+  lakeProvinceList: document.getElementById("lake-province-list"),
 };
 
 const roleLabels = {
@@ -432,6 +434,14 @@ function freeProvinces() {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function addableFreeProvinces() {
+  return freeProvinces().filter((province) => !reservedProvinceKind(province));
+}
+
+function reservedFreeProvinces() {
+  return freeProvinces().filter((province) => reservedProvinceKind(province));
+}
+
 function setEditStatus(text, kind = "") {
   elements.editStatus.textContent = text;
   elements.editStatus.classList.toggle("is-ok", kind === "ok");
@@ -503,7 +513,7 @@ function validateDraft() {
     }
   }
 
-  const unassignedStateProvinces = freeProvinces().filter((province) => !reservedProvinceKind(province));
+  const unassignedStateProvinces = addableFreeProvinces();
   if (unassignedStateProvinces.length > 0) {
     errors.push(`${unassignedStateProvinces.length} non-lake province(s) are free. Assign them to a state before the mod file can be saved.`);
   }
@@ -712,6 +722,7 @@ function renderDetails() {
   elements.specialList.replaceChildren();
   elements.editActions.replaceChildren();
   elements.freeProvinceList.replaceChildren();
+  elements.lakeProvinceList.replaceChildren();
 
   if (!state) {
     elements.selectedTitle.textContent = "No state selected";
@@ -720,9 +731,11 @@ function renderDetails() {
     const warning = firstEnvironmentWarning();
     setEditStatus(warning || "Select a state to edit its province membership.", warning ? "warning" : "");
     elements.freeListMeta.textContent = "No state selected";
+    elements.lakeListMeta.textContent = "No state selected";
     renderEmpty(elements.specialList, "No state selected");
     renderEmpty(elements.provinceList, "No state selected");
     renderEmpty(elements.freeProvinceList, "No state selected");
+    renderEmpty(elements.lakeProvinceList, "No state selected");
     return;
   }
 
@@ -772,10 +785,12 @@ function renderEditControls(state) {
     return;
   }
 
+  const addableFreeCount = renderAddAllFreeProvincesControl(state);
   const province = app.selectedProvince;
   if (!province) {
     const freeCount = freeProvinces().length;
-    setEditStatus(`Only ${state.name} and ${freeCount} free province(s) are visible. Select a province to edit.`);
+    const bulkHint = addableFreeCount > 0 ? " Use Add all free provinces to assign every addable free province at once." : "";
+    setEditStatus(`Only ${state.name} and ${freeCount} free province(s) are visible. Select a province to edit.${bulkHint}`);
     return;
   }
 
@@ -809,29 +824,51 @@ function renderEditControls(state) {
   setEditStatus(`${province} belongs to ${provinceState}. Select that state first or make it free before adding it here.`, "error");
 }
 
+function renderAddAllFreeProvincesControl(state) {
+  const provinces = addableFreeProvinces();
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "edit-action";
+  button.textContent = `Add all free provinces (${formatNumber(provinces.length)})`;
+  button.disabled = provinces.length === 0;
+  button.addEventListener("click", () => addAllFreeProvincesToState());
+  elements.editActions.append(button);
+  return provinces.length;
+}
+
 function renderFreeProvinceList() {
-  const provinces = freeProvinces();
-  const editableCount = provinces.filter((province) => !reservedProvinceKind(province)).length;
-  elements.freeListMeta.textContent = `${formatNumber(provinces.length)} free, ${formatNumber(editableCount)} editable pending assignment`;
+  const addableProvinces = addableFreeProvinces();
+  const reservedProvinces = reservedFreeProvinces();
+  elements.freeListMeta.textContent = `${formatNumber(addableProvinces.length)} addable pending assignment`;
+  elements.lakeListMeta.textContent = `${formatNumber(reservedProvinces.length)} reserved lake province(s)`;
 
-  if (provinces.length === 0) {
-    renderEmpty(elements.freeProvinceList, "No free provinces");
-    return;
+  if (addableProvinces.length === 0) {
+    renderEmpty(elements.freeProvinceList, "No addable free provinces");
+  } else {
+    for (const province of addableProvinces) {
+      renderFreeProvinceChip(elements.freeProvinceList, province, false);
+    }
   }
 
-  for (const province of provinces) {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "free-province-chip";
-    if (reservedProvinceKind(province)) chip.classList.add("is-reserved");
-    if (province === app.selectedProvince) chip.classList.add("is-active");
-    chip.textContent = province;
-    chip.title = reservedProvinceKind(province)
-      ? `${province} - reserved ${reservedProvinceKind(province)}`
-      : `${province} - free province`;
-    chip.addEventListener("click", () => selectProvince(province, true));
-    elements.freeProvinceList.append(chip);
+  if (reservedProvinces.length === 0) {
+    renderEmpty(elements.lakeProvinceList, "No reserved lakes");
+  } else {
+    for (const province of reservedProvinces) {
+      renderFreeProvinceChip(elements.lakeProvinceList, province, true);
+    }
   }
+}
+
+function renderFreeProvinceChip(container, province, reserved) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "free-province-chip";
+  if (reserved) chip.classList.add("is-reserved");
+  if (province === app.selectedProvince) chip.classList.add("is-active");
+  chip.textContent = province;
+  chip.title = reserved ? `${province} - reserved ${reservedProvinceKind(province)}` : `${province} - free province`;
+  chip.addEventListener("click", () => selectProvince(province, true));
+  container.append(chip);
 }
 
 function provinceCenter(province) {
@@ -936,6 +973,24 @@ async function addSelectedFreeProvinceToState() {
 
   state.provinces.push(province);
   app.data.provinceToState[province] = state.name;
+  rerenderAfterDraftChange();
+  await saveDraftIfCompliant();
+}
+
+async function addAllFreeProvincesToState() {
+  const state = app.stateByName.get(app.selectedState);
+  if (!state || app.saving) return;
+
+  const provinces = addableFreeProvinces();
+  if (provinces.length === 0) {
+    setEditStatus(`No addable free provinces can be added to ${state.name}.`, "ok");
+    return;
+  }
+
+  for (const province of provinces) {
+    state.provinces.push(province);
+    app.data.provinceToState[province] = state.name;
+  }
   rerenderAfterDraftChange();
   await saveDraftIfCompliant();
 }
