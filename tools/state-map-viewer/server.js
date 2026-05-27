@@ -17,6 +17,8 @@ const modRoot = path.resolve(process.env.VIC3_MOD_ROOT || findNearestModRoot(too
 const referenceRoot = path.resolve(process.env.VIC3_REFERENCE_ROOT || path.join(modRoot, "tools", "vanilla_1_13_6_reference", "game"));
 const publicRoot = path.join(toolRoot, "public");
 const historyStatesRelativePath = path.join("common", "history", "states", "00_states.txt");
+const historyStatesZipPath = historyStatesRelativePath.replace(/\\/g, "/");
+const maxImportZipBytes = 64 * 1024 * 1024;
 
 const provinceValueKeys = {
   city: "city",
@@ -135,6 +137,159 @@ function createZipArchive(entries) {
   end.writeUInt16LE(0, 20);
 
   return Buffer.concat([...localParts, ...centralParts, end]);
+}
+
+function ensureBufferRange(buffer, offset, length, label) {
+  if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length < 0 || offset + length > buffer.length) {
+    throw new Error(`Invalid ZIP ${label}.`);
+  }
+}
+
+function findEndOfCentralDirectory(buffer) {
+  const minimumSize = 22;
+  if (buffer.length < minimumSize) throw new Error("ZIP file is too small.");
+
+  const earliest = Math.max(0, buffer.length - minimumSize - 0xFFFF);
+  for (let offset = buffer.length - minimumSize; offset >= earliest; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054B50) return offset;
+  }
+  throw new Error("ZIP end-of-central-directory record was not found.");
+}
+
+function normalizeZipEntryName(rawName) {
+  if (!rawName || rawName.includes("\0")) throw new Error("ZIP contains an invalid file name.");
+  const name = rawName.replace(/\\/g, "/");
+  if (name.startsWith("/") || /^[A-Za-z]:/.test(name)) throw new Error(`ZIP entry ${rawName} is not a relative path.`);
+
+  const parts = name.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`ZIP entry ${rawName} contains an unsafe path segment.`);
+  }
+  return name;
+}
+
+function parseZipArchive(buffer) {
+  const eocd = findEndOfCentralDirectory(buffer);
+  const commentLength = buffer.readUInt16LE(eocd + 20);
+  if (eocd + 22 + commentLength !== buffer.length) throw new Error("ZIP has trailing data after the central directory.");
+  if (buffer.readUInt16LE(eocd + 4) !== 0 || buffer.readUInt16LE(eocd + 6) !== 0) {
+    throw new Error("Multi-disk ZIP archives are not supported.");
+  }
+
+  const entriesOnDisk = buffer.readUInt16LE(eocd + 8);
+  const entryCount = buffer.readUInt16LE(eocd + 10);
+  const centralSize = buffer.readUInt32LE(eocd + 12);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  if (entriesOnDisk !== entryCount) throw new Error("Multi-disk ZIP archives are not supported.");
+  if (entryCount === 0xFFFF || centralSize === 0xFFFFFFFF || centralOffset === 0xFFFFFFFF) {
+    throw new Error("ZIP64 archives are not supported.");
+  }
+  ensureBufferRange(buffer, centralOffset, centralSize, "central directory");
+  if (centralOffset + centralSize > eocd) throw new Error("ZIP central directory overlaps file data.");
+
+  const entries = [];
+  const seen = new Set();
+  let position = centralOffset;
+  for (let index = 0; index < entryCount; index += 1) {
+    ensureBufferRange(buffer, position, 46, "central directory entry");
+    if (buffer.readUInt32LE(position) !== 0x02014B50) throw new Error("ZIP central directory is malformed.");
+
+    const flags = buffer.readUInt16LE(position + 8);
+    const method = buffer.readUInt16LE(position + 10);
+    const expectedCrc = buffer.readUInt32LE(position + 16);
+    const compressedSize = buffer.readUInt32LE(position + 20);
+    const uncompressedSize = buffer.readUInt32LE(position + 24);
+    const nameLength = buffer.readUInt16LE(position + 28);
+    const extraLength = buffer.readUInt16LE(position + 30);
+    const commentLengthForEntry = buffer.readUInt16LE(position + 32);
+    const localOffset = buffer.readUInt32LE(position + 42);
+    const entryEnd = position + 46 + nameLength + extraLength + commentLengthForEntry;
+    ensureBufferRange(buffer, position, 46 + nameLength + extraLength + commentLengthForEntry, "central directory entry");
+
+    const rawName = buffer.toString("utf8", position + 46, position + 46 + nameLength);
+    const name = normalizeZipEntryName(rawName);
+    position = entryEnd;
+    if (name.endsWith("/")) continue;
+    if (seen.has(name.toLowerCase())) throw new Error(`ZIP contains duplicate entry ${name}.`);
+    seen.add(name.toLowerCase());
+
+    if (flags & 0x0001) throw new Error(`ZIP entry ${name} is encrypted; encrypted imports are not supported.`);
+    if (flags & 0x0008) throw new Error(`ZIP entry ${name} uses a data descriptor; use the editor's exported ZIP format.`);
+    if (method !== 0) throw new Error(`ZIP entry ${name} is compressed; use the editor's exported ZIP format.`);
+    if (compressedSize !== uncompressedSize) throw new Error(`ZIP entry ${name} has inconsistent sizes.`);
+
+    ensureBufferRange(buffer, localOffset, 30, `local header for ${name}`);
+    if (buffer.readUInt32LE(localOffset) !== 0x04034B50) throw new Error(`ZIP entry ${name} has no local file header.`);
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    ensureBufferRange(buffer, dataStart, compressedSize, `data for ${name}`);
+
+    const data = buffer.slice(dataStart, dataStart + compressedSize);
+    if (crc32(data) !== expectedCrc) throw new Error(`ZIP entry ${name} failed CRC validation.`);
+    entries.push({ name, data });
+  }
+
+  if (position !== centralOffset + centralSize) throw new Error("ZIP central directory size is inconsistent.");
+  return entries;
+}
+
+function isAllowedImportEntryName(name) {
+  if (name === historyStatesZipPath) return true;
+  return /^map_data\/state_regions\/[^/]+\.txt$/i.test(name);
+}
+
+function importTargetPath(entryName) {
+  if (!isAllowedImportEntryName(entryName)) {
+    throw new Error(`ZIP entry ${entryName} is not part of the exported map override structure.`);
+  }
+
+  const target = path.resolve(modRoot, ...entryName.split("/"));
+  const root = path.resolve(modRoot);
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`ZIP entry ${entryName} would write outside the mod root.`);
+  }
+  return target;
+}
+
+function rollbackImportedFiles(backups) {
+  for (const backup of [...backups].reverse()) {
+    if (backup.existed) {
+      fs.writeFileSync(backup.targetPath, backup.data);
+    } else if (fileExists(backup.targetPath)) {
+      fs.unlinkSync(backup.targetPath);
+    }
+  }
+}
+
+function writeImportedMapFiles(entries) {
+  if (entries.length === 0) throw new Error("ZIP does not contain any map override files.");
+
+  const imports = entries.map((entry) => ({ name: entry.name, data: Buffer.from(entry.data), targetPath: importTargetPath(entry.name) }));
+  const backups = [];
+  try {
+    for (const item of imports) {
+      backups.push({ targetPath: item.targetPath, existed: fileExists(item.targetPath), data: fileExists(item.targetPath) ? fs.readFileSync(item.targetPath) : null });
+      fs.mkdirSync(path.dirname(item.targetPath), { recursive: true });
+      fs.writeFileSync(item.targetPath, item.data);
+    }
+
+    const mapData = buildMapData();
+    const proposedStates = listMergedStateRegionFiles().flatMap(parseStateRegionFile);
+    const referenceStates = listReferenceStateRegionFiles().flatMap(parseStateRegionFile);
+    const errors = [...mapData.diagnostics, ...validateProposedStates(proposedStates), ...validateSpecialCompleteness(proposedStates, referenceStates), ...validateHistoryOwnership(proposedStates)];
+    const uniqueErrors = [...new Set(errors)];
+    if (uniqueErrors.length > 0) {
+      const error = new Error("Imported map files would leave invalid map data; import was rolled back.");
+      error.details = uniqueErrors.slice(0, 50);
+      throw error;
+    }
+
+    return { importedFiles: imports.map((item) => item.name), mapData };
+  } catch (error) {
+    rollbackImportedFiles(backups);
+    throw error;
+  }
 }
 
 function safeJoin(root, requestPath) {
@@ -561,9 +716,17 @@ function validateProposedStates(states) {
     }
 
     const stateProvinceSet = new Set(state.provinces);
-    for (const entry of specialEntriesForState(state)) {
-      if (!stateProvinceSet.has(entry.province)) {
-        errors.push(`${state.name} ${entry.role} province ${entry.province} must remain inside that state unless the related attribute is edited too.`);
+    for (const role of provinceValueRoles) {
+      const province = state.special[role];
+      if (province && !stateProvinceSet.has(province)) {
+        errors.push(`${state.name} ${role} province ${province} must remain inside that state unless the related attribute is edited too.`);
+      }
+    }
+    for (const role of provinceListRoles) {
+      for (const province of state.special[role] || []) {
+        if (!stateProvinceSet.has(province)) {
+          errors.push(`${state.name} ${role} province ${province} must remain inside that state unless the related attribute is edited too.`);
+        }
       }
     }
   }
@@ -575,6 +738,34 @@ function validateProposedStates(states) {
   }
 
   return [...new Set(errors)];
+}
+
+function specialListRoleCount(states, role) {
+  return states.reduce((count, state) => count + (state.special[role] || []).length, 0);
+}
+
+function validateSpecialCompleteness(proposedStates, baselineStates) {
+  const errors = [];
+  const proposedByName = new Map(proposedStates.map((state) => [state.name, state]));
+
+  for (const baseline of baselineStates) {
+    const proposed = proposedByName.get(baseline.name);
+    if (!proposed) continue;
+    for (const role of provinceValueRoles) {
+      if (baseline.special[role] && !proposed.special[role]) {
+        errors.push(`${baseline.name} is missing ${role}; assign it to a valid province before saving.`);
+      }
+    }
+  }
+
+  for (const role of provinceListRoles) {
+    const missingCount = specialListRoleCount(baselineStates, role) - specialListRoleCount(proposedStates, role);
+    if (missingCount > 0) {
+      errors.push(`Map is missing ${missingCount} ${role} marker(s); assign missing marker(s) before saving.`);
+    }
+  }
+
+  return errors;
 }
 
 function replaceStateBlock(raw, stateName, replaceBlock) {
@@ -1040,10 +1231,11 @@ function buildMapData() {
     reservedProvinces: buildReservedProvinces(),
     gameWriteSafety: safety,
     capabilities: {
-      schemaVersion: 6,
+      schemaVersion: 7,
       saveStateRegions: true,
       resetStateRegions: true,
       exportMap: true,
+      importMap: true,
       reservedProvinces: true,
       specialReassignment: true,
       historyOwnershipSync: true,
@@ -1093,6 +1285,24 @@ function readJsonBody(request) {
         reject(new Error(`Invalid JSON: ${error.message}`));
       }
     });
+    request.on("error", reject);
+  });
+}
+
+function readBufferBody(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error(`Request body is too large. Import ZIP files must be ${Math.floor(maxBytes / 1024 / 1024)} MB or smaller.`));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -1162,7 +1372,8 @@ async function handleSaveStateRegions(request, response) {
     assertGameWriteSafe();
     const replacements = parseSavePayload(await readJsonBody(request));
     const replacementByName = new Map(replacements.map((state) => [state.name, state]));
-    const proposedStates = listMergedStateRegionFiles().flatMap(parseStateRegionFile).map((state) => {
+    const currentStates = listMergedStateRegionFiles().flatMap(parseStateRegionFile);
+    const proposedStates = currentStates.map((state) => {
       const clone = cloneState(state);
       if (replacementByName.has(state.name)) {
         const replacement = replacementByName.get(state.name);
@@ -1179,6 +1390,7 @@ async function handleSaveStateRegions(request, response) {
     }
 
     const errors = validateProposedStates(proposedStates);
+  errors.push(...validateSpecialCompleteness(proposedStates, currentStates));
     errors.push(...validateHistoryOwnership(proposedStates));
     if (errors.length > 0) {
       sendError(response, 422, "State-region edits are not compliant and were not saved.", errors.slice(0, 50));
@@ -1228,6 +1440,18 @@ function handleExportMap(response) {
   }
 }
 
+async function handleImportMap(request, response) {
+  try {
+    assertGameWriteSafe();
+    const archive = await readBufferBody(request, maxImportZipBytes);
+    const entries = parseZipArchive(archive);
+    const result = writeImportedMapFiles(entries);
+    sendJson(response, { ok: true, importedFiles: result.importedFiles, mapData: result.mapData });
+  } catch (error) {
+    sendError(response, error.details ? 422 : 400, error.message || String(error), error.details);
+  }
+}
+
 function sendFile(response, filePath) {
   fs.stat(filePath, (error, stat) => {
     if (error || !stat.isFile()) {
@@ -1256,6 +1480,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/reset-state-regions") {
     handleResetStateRegions(response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/import-map") {
+    handleImportMap(request, response);
     return;
   }
 

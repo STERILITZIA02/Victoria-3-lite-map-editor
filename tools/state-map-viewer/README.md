@@ -42,7 +42,14 @@ Features:
 - Draws thicker dark province boundaries and thinner gold state boundaries.
 - Marks special state-region provinces: city, farm, mine, wood, port,
   center_province, prime_land, and impassable.
+- Allows selected-state provinces to remove existing special markers and add
+    only legal missing markers, with save-time validation.
 - Exports saved `map_data/state_regions/*.txt` and
     `common/history/states/00_states.txt` overrides as a ZIP.
+- Imports the same exported ZIP structure by file picker or drag-and-drop,
+    replacing only the matching override paths after validation and showing upload,
+    reload, map scan, and render progress.
+- Shows reset progress while generated overrides are removed and the vanilla
+    reference map is reloaded.
 - Supports mouse-wheel zoom, drag panning, state search, state fitting,
   province click inspection, and province/state detail panels.

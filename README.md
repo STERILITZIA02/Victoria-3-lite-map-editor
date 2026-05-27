@@ -33,8 +33,9 @@ It can:
 - Filter the map so selecting one state shows only that state and currently free provinces.
 - Move provinces from a state into the free pool.
 - Add free provinces into the selected state.
+- Remove special province markers from a province, then add only legal missing markers back to provinces in the selected state.
 - Automatically save after valid edits.
-- Export saved map and history override files as a downloadable ZIP.
+- Export saved map and history override files as a downloadable ZIP, and import the same ZIP structure back into the active mod with loading progress.
 - Block saving when the draft contains duplicate provinces, non-lake free provinces, invalid special province fields, or unsafe paths.
 - Reassign special province roles when possible, including `city`, `farm`, `mine`, `wood`, `port`, `center_province`, `prime_land`, and `impassable`.
 - Sync initial ownership in `common/history/states/00_states.txt` when an owned province is moved between states.
@@ -157,12 +158,14 @@ node server.js --open --port=8799
 3. Check the top source line. It shows the exact mod folder being edited and whether known `content_load.json` files enable that same folder.
 4. The map view will dim unrelated states and keep the selected state plus free provinces visible.
 5. Click a province that belongs to the selected state and choose `Make province free`.
-6. Click a free province and choose `Add xRRGGBB to STATE_NAME`.
-7. The editor validates the whole draft after the action.
-8. If the draft is compliant, the tool saves automatically.
-9. If the draft is invalid, the tool shows a blocking alert and does not write files.
-10. Click `Export Map` to download the saved override files as a ZIP when you want to move or share the edited map.
-11. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
+6. Click a province that belongs to the selected state and use the visible special marker buttons to remove existing markers or add legal missing markers.
+7. Click a free province and choose `Add xRRGGBB to STATE_NAME`.
+8. The editor validates the whole draft after the action.
+9. If the draft is compliant, the tool saves automatically.
+10. If the draft is invalid, the tool shows a blocking alert and does not write files.
+11. Click `Export Map` to download the saved override files as a ZIP when you want to move or share the edited map.
+12. Click `Import Map`, or drag the exported ZIP onto the editor, to replace matching saved override files in this mod.
+13. Launch Victoria 3 with this mod enabled, then start a new game to verify the map.
 
 A province cannot remain free unless it is a reserved lake province listed in `map_data/default.map`. Normal land provinces must belong to exactly one state before saving.
 
@@ -199,6 +202,17 @@ common/history/states/00_states.txt
 
 It does not export the editor, bundled reference data, or unedited vanilla files.
 
+`Import Map` accepts that same exported ZIP structure and writes only these paths back into the active mod root:
+
+```text
+map_data/state_regions/*.txt
+common/history/states/00_states.txt
+```
+
+The importer rejects ZIP entries outside that whitelist, unsupported compressed/encrypted ZIP entries, duplicate paths, and imports that would leave invalid state-region or history ownership data. If validation fails, changed files are rolled back.
+
+The import screen shows upload, validation, reload, map scan, and render progress. If an import fails, the editor keeps the previous map loaded.
+
 ### Reset Vanilla
 
 Click `Reset Vanilla` to remove generated active overrides from the mod root:
@@ -209,6 +223,8 @@ common/history/states/00_states.txt
 ```
 
 The bundled reference data and the editor itself are not deleted. After reset, the editor falls back to vanilla 1.13.6 reference data.
+
+Reset uses the same loading overlay while it sends the reset request, reloads the vanilla data, rescans the map image, and redraws the editor.
 
 ### File Formats Used by This Project
 
@@ -234,6 +250,7 @@ The editor blocks saving when any of these are true:
 - A normal non-lake province is unassigned/free.
 - A special province field points outside its state.
 - A port replacement does not touch a sea state.
+- A required special marker was deleted and has not been assigned back to a valid province.
 - A province ID is malformed or unknown.
 - A requested state name does not exist in the merged reference/active state list.
 
@@ -355,8 +372,9 @@ map_data/state_regions/*.txt
 - 选择一个 state 后，只显示该 state 和当前 free province，其他 state 会被遮罩。
 - 把 selected state 内的 province 移到 free pool。
 - 把 free province 加入 selected state。
+- 可以删除 province 上已有的特殊标记，并且只把合法、缺失的特殊标记手动加回 selected state 内的 province。
 - 在修改合规时自动保存。
-- 将已保存的地图和历史覆盖文件导出为可下载 ZIP。
+- 将已保存的地图和历史覆盖文件导出为可下载 ZIP，并用带进度条的导入流程把同结构 ZIP 写回当前 mod。
 - 在草稿有重复 province、普通 province 未分配、special province 不合法、路径不安全等问题时阻止保存。
 - 自动处理部分 special province 角色，包括 `city`、`farm`、`mine`、`wood`、`port`、`center_province`、`prime_land`、`impassable`。
 - 当被移动 province 在开局历史中有 owner 时，同步写入 `common/history/states/00_states.txt`。
@@ -479,12 +497,14 @@ node server.js --open --port=8799
 3. 先检查页面顶部 source line。它会显示正在编辑的准确 mod 文件夹，以及已知 `content_load.json` 是否启用了同一个文件夹。
 4. 选择 state 后，地图会遮罩无关 state，只保留 selected state 和 free province。
 5. 点击 selected state 内的 province，选择 `Make province free`。
-6. 点击 free province，选择 `Add xRRGGBB to STATE_NAME`。
-7. 工具会在每次操作后校验整个草稿。
-8. 如果草稿合规，会自动保存。
-9. 如果草稿不合规，会弹出提示并阻止写入文件。
-10. 需要移动或分享编辑完成的地图时，点击 `Export Map` 下载已保存覆盖文件 ZIP。
-11. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
+6. 点击 selected state 内的 province，用界面上显示的特殊标记按钮删除已有标记，或添加当前合法且缺失的标记。
+7. 点击 free province，选择 `Add xRRGGBB to STATE_NAME`。
+8. 工具会在每次操作后校验整个草稿。
+9. 如果草稿合规，会自动保存。
+10. 如果草稿不合规，会弹出提示并阻止写入文件。
+11. 需要移动或分享编辑完成的地图时，点击 `Export Map` 下载已保存覆盖文件 ZIP。
+12. 点击 `Import Map`，或把导出的 ZIP 拖到编辑器窗口中，把匹配的覆盖文件替换回当前 mod。
+13. 在 Victoria 3 launcher 中启用该 mod，完整重启游戏并开新档测试。
 
 普通陆地 province 不能长期处于 free 状态。只有 `map_data/default.map` 中列出的 reserved lake province 可以保持未分配。所有普通 province 在保存前必须且只能属于一个 state。
 
@@ -513,6 +533,17 @@ common/history/states/00_states.txt
 
 它不会导出编辑器、内置 reference 数据或未编辑的原版文件。
 
+`Import Map` 接受同样结构的导出 ZIP，并且只会把以下路径写回当前 mod root：
+
+```text
+map_data/state_regions/*.txt
+common/history/states/00_states.txt
+```
+
+导入器会拒绝白名单以外的 ZIP 条目、不支持的压缩/加密 ZIP 条目、重复路径，以及会导致 state-region 或 history ownership 数据无效的导入。校验失败时，已经写入的文件会回滚。
+
+导入界面会显示上传、校验、重新加载、扫描地图、重新渲染的进度。导入失败时，编辑器会保留之前已经加载的地图。
+
 当移动的 province 在开局历史中有 owner 时，工具还会写入：
 
 ```text
@@ -531,6 +562,8 @@ common/history/states/00_states.txt
 ```
 
 它不会删除工具本身，也不会删除内置 reference。Reset 后，编辑器会重新回退到原版 1.13.6 reference 地图。
+
+Reset 也会显示加载遮罩和进度，覆盖发送请求、重新加载原版数据、扫描地图图像、重绘编辑器这些阶段。
 
 ### 本项目涉及的文件格式
 
@@ -556,6 +589,7 @@ Victoria 3 脚本 `.txt` 文件应使用 UTF-8。内置 vanilla 文件来自游�
 - 普通非 lake province 处于 free/unassigned 状态。
 - special province 字段指向 state 外部的 province。
 - port replacement 不接触 sea state。
+- 必需的 special marker 被删除后还没有重新分配给合法 province。
 - province ID 格式错误或不存在。
 - 请求修改的 state name 不存在于 merged reference/active state 列表。
 

@@ -38,6 +38,10 @@ input {
   font: inherit;
 }
 
+.hidden-file-input {
+  display: none;
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: 86px minmax(0, 1fr);
@@ -181,6 +185,11 @@ input {
 
 .search-field input:focus {
   border-color: var(--gold);
+}
+
+body.is-import-dragging .map-viewport {
+  outline: 2px solid var(--gold);
+  outline-offset: -3px;
 }
 
 .list-meta {
@@ -590,6 +599,20 @@ input {
 .edit-action:hover:not(:disabled) {
   border-color: var(--gold);
   background: #18150d;
+}
+
+.edit-action.special-action {
+  border-color: rgba(233, 199, 102, 0.62);
+  color: var(--gold);
+}
+
+.edit-action.danger-action {
+  border-color: rgba(214, 111, 95, 0.65);
+  color: #efb3a9;
+}
+
+.edit-action.danger-action:hover:not(:disabled) {
+  border-color: var(--red);
 }
 
 .edit-action:disabled {

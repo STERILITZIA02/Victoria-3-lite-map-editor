@@ -36,6 +36,7 @@ const elements = {
   freeProvinceList: document.getElementById("free-province-list"),
   lakeListMeta: document.getElementById("lake-list-meta"),
   lakeProvinceList: document.getElementById("lake-province-list"),
+  importMapFile: document.getElementById("import-map-file"),
 };
 
 const roleLabels = {
@@ -83,7 +84,12 @@ const app = {
   selectedState: null,
   selectedProvince: null,
   saving: false,
+  busyText: "",
 };
+
+const provinceValueRoles = ["city", "farm", "mine", "wood", "port", "center"];
+const provinceListRoles = ["prime_land", "impassable"];
+const specialRoles = [...provinceValueRoles, ...provinceListRoles];
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -109,12 +115,25 @@ function setProgress(value, text, detail) {
   elements.loadingDetail.textContent = detail || `${percent}%`;
 }
 
+function showLoadingProgress(value, text, detail) {
+  elements.loadingOverlay.classList.remove("is-hidden");
+  setProgress(value, text, detail);
+}
+
+function hideLoadingProgress() {
+  elements.loadingOverlay.classList.add("is-hidden");
+}
+
 function provinceKeyToInt(key) {
   return parseInt(key.slice(1), 16);
 }
 
 function intToProvinceKey(value) {
   return `x${value.toString(16).padStart(6, "0").toUpperCase()}`;
+}
+
+function sortProvinceList(provinces) {
+  return [...provinces].sort((left, right) => provinceKeyToInt(left) - provinceKeyToInt(right));
 }
 
 function pixelIntAt(data, offset) {
@@ -246,7 +265,7 @@ async function readJsonResponse(response, operation) {
 }
 
 function assertCompatibleMapData(data) {
-  if (!data.capabilities || data.capabilities.schemaVersion < 6 || !data.capabilities.resetStateRegions || !data.capabilities.reservedProvinces || !data.capabilities.historyOwnershipSync || !data.capabilities.sortedStateRegionProvinces || !data.capabilities.exportMap) {
+  if (!data.capabilities || data.capabilities.schemaVersion < 7 || !data.capabilities.resetStateRegions || !data.capabilities.reservedProvinces || !data.capabilities.historyOwnershipSync || !data.capabilities.sortedStateRegionProvinces || !data.capabilities.exportMap || !data.capabilities.importMap) {
     throw new Error("Viewer server is stale. Stop the old server process and restart tools/state-map-viewer/server.js, then reload this page.");
   }
   if (!data.reservedProvinces || typeof data.reservedProvinces !== "object") {
@@ -292,7 +311,7 @@ function readSourcePixels() {
   return imageData.data;
 }
 
-async function scanMapImage() {
+async function scanMapImage(options = {}) {
   const width = app.width;
   const height = app.height;
   const source = app.sourcePixels;
@@ -300,6 +319,9 @@ async function scanMapImage() {
   const overlay = context.createImageData(width, height);
   const out = overlay.data;
   const rowsPerChunk = 48;
+  const progressStart = options.progressStart ?? 34;
+  const progressRange = options.progressRange ?? 50;
+  const scanText = options.scanText || "Tracing province and state boundaries";
 
   app.mapProvinceKeys = new Set();
   app.provinceSeaTouch = new Set();
@@ -352,11 +374,11 @@ async function scanMapImage() {
     }
 
     const done = yEnd / height;
-    setProgress(34 + done * 50, "Tracing province and state boundaries", `${Math.round(done * 100)}% of pixels scanned`);
+    setProgress(progressStart + done * progressRange, scanText, `${Math.round(done * 100)}% of pixels scanned`);
     await nextFrame();
   }
 
-  setProgress(86, "Compositing boundary overlay", "Drawing overlay canvas");
+  setProgress(progressStart + progressRange, options.compositeText || "Compositing boundary overlay", "Drawing overlay canvas");
   await nextFrame();
   context.putImageData(overlay, 0, 0);
 }
@@ -365,18 +387,75 @@ function specialEntriesForState(state) {
   if (!state) return [];
   const entries = [];
 
-  for (const role of ["city", "farm", "mine", "wood", "port", "center"]) {
+  for (const role of provinceValueRoles) {
     const province = state.special[role];
     if (province) entries.push({ role, province });
   }
 
-  for (const role of ["prime_land", "impassable"]) {
+  for (const role of provinceListRoles) {
     for (const province of state.special[role] || []) {
       entries.push({ role, province });
     }
   }
 
   return entries;
+}
+
+function specialEntriesForProvince(state, province) {
+  return specialEntriesForState(state).filter((entry) => entry.province === province);
+}
+
+function roleIsList(role) {
+  return provinceListRoles.includes(role);
+}
+
+function savedListRoleCount(role) {
+  let count = 0;
+  for (const special of app.savedSpecials.values()) {
+    count += (special[role] || []).length;
+  }
+  return count;
+}
+
+function currentListRoleCount(role) {
+  return app.data.states.reduce((count, state) => count + (state.special[role] || []).length, 0);
+}
+
+function missingListRoleCount(role) {
+  return Math.max(0, savedListRoleCount(role) - currentListRoleCount(role));
+}
+
+function canAddSpecialRole(state, province, role) {
+  if (!state || !province) return { ok: false, reason: "Select a province in the current state." };
+  if (!specialRoles.includes(role)) return { ok: false, reason: "Unknown special marker." };
+  if (!state.provinces.includes(province)) return { ok: false, reason: `${province} is not in ${state.name}.` };
+  if (role === "port" && !app.provinceSeaTouch.has(province)) return { ok: false, reason: `${province} is not coastal and cannot be a port.` };
+
+  if (roleIsList(role)) {
+    if (missingListRoleCount(role) === 0) return { ok: false, reason: `${roleNames[role]} has no missing marker to assign.` };
+    return { ok: true, reason: "" };
+  }
+
+  const savedSpecial = app.savedSpecials.get(state.name);
+  if (!savedSpecial?.[role]) return { ok: false, reason: `${state.name} does not have a missing ${roleNames[role]} marker.` };
+  if (state.special[role]) return { ok: false, reason: `${state.name} already has ${roleNames[role]} at ${state.special[role]}.` };
+  return { ok: true, reason: "" };
+}
+
+function addSpecialRoleToState(state, province, role) {
+  if (roleIsList(role)) {
+    state.special[role] = sortProvinceList([...(state.special[role] || []), province]);
+    return;
+  }
+  state.special[role] = province;
+}
+
+function removeSpecialRoleFromState(state, province, role) {
+  if (roleIsList(role)) {
+    state.special[role] = (state.special[role] || []).filter((item) => item !== province);
+    return;
+  }
+  if (state.special[role] === province) state.special[role] = null;
 }
 
 function uniqueSpecialCount(state) {
@@ -511,10 +590,34 @@ function validateDraft() {
     }
 
     const provinceSet = new Set(state.provinces);
-    for (const entry of specialEntriesForState(state)) {
-      if (!provinceSet.has(entry.province)) {
-        errors.push(`${state.name} ${roleNames[entry.role] || entry.role} province ${entry.province} would be outside the state.`);
+    const savedSpecial = app.savedSpecials.get(state.name);
+    for (const role of provinceValueRoles) {
+      const province = state.special[role];
+      if (savedSpecial?.[role] && !province) {
+        errors.push(`${state.name} is missing ${roleNames[role]}. Assign it to a valid province before saving.`);
+        continue;
       }
+      if (!province) continue;
+      if (!provinceSet.has(province)) {
+        errors.push(`${state.name} ${roleNames[role]} province ${province} would be outside the state.`);
+      }
+      if (role === "port" && !app.provinceSeaTouch.has(province)) {
+        errors.push(`${state.name} port province ${province} must touch the sea.`);
+      }
+    }
+    for (const role of provinceListRoles) {
+      for (const province of state.special[role] || []) {
+        if (!provinceSet.has(province)) {
+          errors.push(`${state.name} ${roleNames[role]} province ${province} would be outside the state.`);
+        }
+      }
+    }
+  }
+
+  for (const role of provinceListRoles) {
+    const missingCount = missingListRoleCount(role);
+    if (missingCount > 0) {
+      errors.push(`Map is missing ${missingCount} ${roleNames[role]} marker(s). Assign the missing marker(s) before saving.`);
     }
   }
 
@@ -561,9 +664,22 @@ function rerenderAfterDraftChange() {
   updateMarkerSelection();
 }
 
-async function rescanAfterSavedData() {
+async function rescanAfterSavedData(progress = null) {
   buildLookups(app.data);
-  await scanMapImage();
+  if (progress) {
+    setProgress(progress.lookup ?? 42, progress.lookupText || "Rebuilding province lookup tables", progress.lookupDetail || "Preparing map scan");
+    await nextFrame();
+  }
+  await scanMapImage(progress ? {
+    progressStart: progress.scanStart ?? 48,
+    progressRange: progress.scanRange ?? 38,
+    scanText: progress.scanText || "Reloading province and state boundaries",
+    compositeText: progress.compositeText || "Compositing updated boundary overlay",
+  } : undefined);
+  if (progress) {
+    setProgress(progress.render ?? 92, progress.renderText || "Rendering updated map controls", progress.renderDetail || "Refreshing state, province, and marker lists");
+    await nextFrame();
+  }
   renderSummary();
   renderStateList();
   renderDetails();
@@ -586,6 +702,7 @@ async function saveDraftIfCompliant() {
   }
 
   app.saving = true;
+  app.busyText = `Saving ${changes.length} changed state(s)...`;
   setEditStatus(`Saving ${changes.length} changed state(s)...`, "warning");
   renderDetails();
   let finalStatus = null;
@@ -609,6 +726,7 @@ async function saveDraftIfCompliant() {
     alert(message);
   } finally {
     app.saving = false;
+    app.busyText = "";
     renderDetails();
     if (finalStatus) setEditStatus(finalStatus.text, finalStatus.kind);
   }
@@ -619,20 +737,26 @@ async function resetToVanillaStateRegions() {
   if (!confirmed) return;
 
   app.saving = true;
-  setEditStatus("Resetting active state-region overrides...", "warning");
+  app.busyText = "Resetting active state-region overrides...";
+  showLoadingProgress(4, "Resetting active state-region overrides", "Sending reset request");
+  setEditStatus(app.busyText, "warning");
 
   try {
+    setProgress(12, "Resetting active state-region overrides", "Waiting for server response");
     const response = await fetch("/api/reset-state-regions", { method: "POST" });
     const result = await readJsonResponse(response, "Reset Vanilla");
     if (!result.ok) throw new Error(result.error || "Reset failed.");
 
+    setProgress(32, "Reset complete", "Reloading vanilla map data");
     app.data = result.mapData;
     app.selectedState = null;
     app.selectedProvince = null;
     snapshotSavedProvinceLists(app.data);
-    await rescanAfterSavedData();
+    await rescanAfterSavedData({ scanStart: 40, scanRange: 44, scanText: "Scanning reset province map", render: 91 });
     setFocusBox(null);
     fitWorld();
+    setProgress(100, "Reset map loaded", "Done");
+    await nextFrame();
 
     const removedCount = result.removedFiles.length;
     setEditStatus(removedCount > 0 ? `Reset to vanilla. Removed ${removedCount} active state-region file(s).` : "Already using vanilla state regions.", "ok");
@@ -642,6 +766,8 @@ async function resetToVanillaStateRegions() {
     alert(message);
   } finally {
     app.saving = false;
+    app.busyText = "";
+    hideLoadingProgress();
     renderDetails();
   }
 }
@@ -672,6 +798,99 @@ async function exportEditedMap() {
     const message = error.message || String(error);
     setEditStatus(message, "error");
     alert(message);
+  }
+}
+
+function isZipFile(file) {
+  if (!file) return false;
+  return /\.zip$/i.test(file.name || "") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+}
+
+function hasDraggedFiles(dataTransfer) {
+  if (!dataTransfer) return false;
+  if (Array.from(dataTransfer.types || []).includes("Files")) return true;
+  return Array.from(dataTransfer.items || []).some((item) => item.kind === "file");
+}
+
+async function importMapFromFileList(fileList) {
+  const file = Array.from(fileList || []).find(isZipFile);
+  if (!file) {
+    setEditStatus("Choose or drop a .zip map export file.", "warning");
+    return;
+  }
+  await importEditedMap(file);
+}
+
+function postZipWithUploadProgress(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/import-map");
+    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    });
+    xhr.addEventListener("load", () => {
+      let payload;
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        reject(new Error(`Import failed: server returned non-JSON ${xhr.status} ${xhr.statusText}. Restart the viewer server.`));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const detail = Array.isArray(payload.details) && payload.details.length ? ` ${payload.details[0]}` : "";
+        reject(new Error(`${payload.error || `Import failed with ${xhr.status}`}${detail}`));
+        return;
+      }
+      resolve(payload);
+    });
+    xhr.addEventListener("error", () => reject(new Error("Import failed: network error.")));
+    xhr.addEventListener("abort", () => reject(new Error("Import was aborted.")));
+    xhr.send(file);
+  });
+}
+
+async function importEditedMap(file) {
+  if (app.saving) {
+    setEditStatus("Wait for the current save to finish before importing.", "warning");
+    return;
+  }
+
+  const confirmed = confirm(`Import ${file.name} and replace the matching saved map override files in this mod?`);
+  if (!confirmed) return;
+
+  app.saving = true;
+  app.busyText = `Importing ${file.name}...`;
+  showLoadingProgress(3, "Importing map ZIP", "Preparing upload");
+  setEditStatus(app.busyText, "warning");
+  renderDetails();
+
+  try {
+    const result = await postZipWithUploadProgress(file, (progress) => {
+      setProgress(8 + progress * 34, "Uploading map ZIP", `${Math.round(progress * 100)}% uploaded`);
+    });
+    if (!result.ok) throw new Error(result.error || "Import failed.");
+
+    setProgress(48, "Import validated", "Reloading imported map data");
+    app.data = result.mapData;
+    app.selectedState = null;
+    app.selectedProvince = null;
+    snapshotSavedProvinceLists(app.data);
+    await rescanAfterSavedData({ scanStart: 52, scanRange: 34, scanText: "Scanning imported province map", render: 92 });
+    setFocusBox(null);
+    fitWorld();
+    setProgress(100, "Imported map loaded", "Done");
+    await nextFrame();
+    setEditStatus(`Imported ${result.importedFiles.length} map override file(s).`, "ok");
+  } catch (error) {
+    const message = error.message || String(error);
+    setEditStatus(message, "error");
+    alert(message);
+  } finally {
+    app.saving = false;
+    app.busyText = "";
+    hideLoadingProgress();
+    renderDetails();
   }
 }
 
@@ -810,7 +1029,7 @@ function renderDetails() {
 
 function renderEditControls(state) {
   if (app.saving) {
-    setEditStatus("Saving changes...", "warning");
+    setEditStatus(app.busyText || "Saving changes...", "warning");
     return;
   }
 
@@ -834,10 +1053,14 @@ function renderEditControls(state) {
   button.className = "edit-action";
 
   if (provinceState === state.name) {
+    renderSpecialRoleControls(state, province);
     button.textContent = "Make province free";
     button.addEventListener("click", () => makeSelectedProvinceFree());
     elements.editActions.append(button);
-    setEditStatus(`${province} belongs to ${state.name}. Removing it creates a temporary free province until it is assigned elsewhere.`, "warning");
+    const addableRoles = addableSpecialRolesForProvince(state, province);
+    const currentRoles = specialEntriesForProvince(state, province);
+    const specialHint = addableRoles.length > 0 || currentRoles.length > 0 ? " Special markers can be edited before saving." : "";
+    setEditStatus(`${province} belongs to ${state.name}. Removing it creates a temporary free province until it is assigned elsewhere.${specialHint}`, "warning");
     return;
   }
 
@@ -856,6 +1079,33 @@ function renderEditControls(state) {
   }
 
   setEditStatus(`${province} belongs to ${provinceState}. Select that state first or make it free before adding it here.`, "error");
+}
+
+function addableSpecialRolesForProvince(state, province) {
+  return specialRoles.filter((role) => canAddSpecialRole(state, province, role).ok);
+}
+
+function renderSpecialRoleControls(state, province) {
+  const currentRoles = specialEntriesForProvince(state, province);
+  for (const entry of currentRoles) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "edit-action danger-action";
+    button.textContent = `Remove ${roleNames[entry.role]}`;
+    button.title = `Remove ${roleNames[entry.role]} from ${province}`;
+    button.addEventListener("click", () => removeSelectedSpecialRole(entry.role));
+    elements.editActions.append(button);
+  }
+
+  for (const role of addableSpecialRolesForProvince(state, province)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "edit-action special-action";
+    button.textContent = `Add ${roleNames[role]}`;
+    button.title = `Add ${roleNames[role]} to ${province}`;
+    button.addEventListener("click", () => addSelectedSpecialRole(role));
+    elements.editActions.append(button);
+  }
 }
 
 function renderAddAllFreeProvincesControl(state) {
@@ -1008,6 +1258,42 @@ async function addSelectedFreeProvinceToState() {
   state.provinces.push(province);
   app.data.provinceToState[province] = state.name;
   rerenderAfterDraftChange();
+  await saveDraftIfCompliant();
+}
+
+async function removeSelectedSpecialRole(role) {
+  const state = app.stateByName.get(app.selectedState);
+  const province = app.selectedProvince;
+  if (!state || !province) return;
+  const entries = specialEntriesForProvince(state, province).filter((entry) => entry.role === role);
+  if (entries.length === 0) {
+    setEditStatus(`${province} does not have ${roleNames[role] || role}.`, "warning");
+    return;
+  }
+
+  removeSpecialRoleFromState(state, province, role);
+  rerenderAfterDraftChange();
+  const errors = validateDraft();
+  if (errors.length > 0) {
+    setEditStatus(`Removed ${roleNames[role] || role} from ${province}. ${errors[0]}`, "warning");
+    return;
+  }
+  setEditStatus(`Removed ${roleNames[role] || role} from ${province}.`, "warning");
+  await saveDraftIfCompliant();
+}
+
+async function addSelectedSpecialRole(role) {
+  const state = app.stateByName.get(app.selectedState);
+  const province = app.selectedProvince;
+  const legality = canAddSpecialRole(state, province, role);
+  if (!legality.ok) {
+    showBlockingMessage(legality.reason);
+    return;
+  }
+
+  addSpecialRoleToState(state, province, role);
+  rerenderAfterDraftChange();
+  setEditStatus(`Added ${roleNames[role] || role} to ${province}.`, "warning");
   await saveDraftIfCompliant();
 }
 
@@ -1224,6 +1510,10 @@ function wireEvents() {
         await exportEditedMap();
         return;
       }
+      if (action === "import-map") {
+        elements.importMapFile.click();
+        return;
+      }
       if (action === "clear-selection") {
         clearSelection();
         return;
@@ -1243,6 +1533,31 @@ function wireEvents() {
 
   elements.toggleMarkers.addEventListener("change", () => {
     elements.markersLayer.classList.toggle("is-hidden", !elements.toggleMarkers.checked);
+  });
+
+  elements.importMapFile.addEventListener("change", async () => {
+    await importMapFromFileList(elements.importMapFile.files);
+    elements.importMapFile.value = "";
+  });
+
+  document.addEventListener("dragover", (event) => {
+    if (!hasDraggedFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    document.body.classList.add("is-import-dragging");
+  });
+
+  document.addEventListener("dragleave", (event) => {
+    if (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight) {
+      document.body.classList.remove("is-import-dragging");
+    }
+  });
+
+  document.addEventListener("drop", async (event) => {
+    if (!hasDraggedFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    document.body.classList.remove("is-import-dragging");
+    await importMapFromFileList(event.dataTransfer.files);
   });
 
   elements.viewport.addEventListener("wheel", (event) => {
