@@ -733,7 +733,7 @@ async function saveDraftIfCompliant() {
 }
 
 async function resetToVanillaStateRegions() {
-  const confirmed = confirm("Remove all active state-region override files from this mod and reload the vanilla 1.13.6 state map?");
+  const confirmed = confirm("Remove all active state-region override files from this mod and reload the vanilla 1.13.7 state map?");
   if (!confirmed) return;
 
   app.saving = true;

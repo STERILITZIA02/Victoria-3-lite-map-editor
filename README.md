@@ -4,11 +4,11 @@ A lightweight local web editor for Victoria 3 state-region province membership.
 
 一个轻量级 Victoria 3 本地网页地图编辑器，用于编辑 state region 中包含的 province 地块。
 
-This tool is designed for Victoria 3 1.13.6 and ships with vanilla 1.13.6 reference map data. It runs locally with Node.js, opens a browser UI, validates every province move, and writes safe Victoria 3 mod override files only when the draft is compliant.
+This tool is designed for Victoria 3 1.13.7 and ships with vanilla 1.13.7 reference map data. It runs locally with Node.js, opens a browser UI, validates every province move, and writes safe Victoria 3 mod override files only when the draft is compliant.
 
-本工具面向 Victoria 3 1.13.6，内置原版 1.13.6 地图参考数据。它使用 Node.js 在本地启动网页界面，校验每一次 province 移动，并且只有在草稿完全合规时才写入 Victoria 3 mod 覆盖文件。
+本工具面向 Victoria 3 1.13.7，内置原版 1.13.7 地图参考数据。它使用 Node.js 在本地启动网页界面，校验每一次 province 移动，并且只有在草稿完全合规时才写入 Victoria 3 mod 覆盖文件。
 
-Project version: 0.1.0. Supported game version: Victoria 3 1.13.6.
+Project version: 0.1.0. Supported game version: Victoria 3 1.13.7, checksum `f369`.
 
 ## Preview
 
@@ -28,7 +28,7 @@ This editor lets you move existing province color IDs such as `xA1B2C3` between 
 
 It can:
 
-- Read the active mod first, then fall back to bundled vanilla 1.13.6 reference files.
+- Read the active mod first, then fall back to bundled vanilla 1.13.7 reference files.
 - Display all state regions and provinces on the vanilla province color map.
 - Filter the map so selecting one state shows only that state and currently free provinces.
 - Move provinces from a state into the free pool.
@@ -46,13 +46,13 @@ It does not:
 - Paint or create new province colors in `provinces.png`.
 - Change terrain, heightmap, rivers, adjacencies, strategic regions, or spline networks.
 - Create entirely new states with new IDs, localization, hub locators, or strategic-region membership.
-- Guarantee compatibility with Victoria 3 versions other than the bundled vanilla 1.13.6 reference data.
+- Guarantee compatibility with Victoria 3 versions other than the bundled vanilla 1.13.7 reference data.
 
 ### Required Environment
 
 - Windows, macOS, or Linux.
 - Node.js 18 or newer. Node.js 20+ is recommended.
-- Victoria 3 1.13.6 if you want exact vanilla-reference compatibility.
+- Victoria 3 1.13.7 if you want exact vanilla-reference compatibility.
 - A local mod folder path that contains ASCII characters only.
 
 Important: Victoria 3 can fail to load local mod files from paths containing non-ASCII characters. This is a known local mod problem documented by the Victoria 3 wiki. If your `Documents` path contains localized characters, accents, Cyrillic, CJK characters, or other non-ASCII text, use an ASCII-only game data path such as:
@@ -99,7 +99,7 @@ C:/Users/YourName/Paradox Interactive/Victoria 3/mod/Victoria-3-lite-map-editor/
   README.md
   tools/
     state-map-viewer/
-    vanilla_1_13_6_reference/
+    vanilla_1_13_7_reference/
 ```
 
   If you are creating a new standalone local mod, copy the whole folder. If you are adding the editor to an existing mod, copy `tools/` and optionally `start-editor.cmd`, but keep that mod's existing `.metadata/metadata.json`. Overwriting an existing mod's metadata changes how the Paradox Launcher identifies the mod and can make the game load a different folder than the one the editor saves to.
@@ -145,7 +145,7 @@ Advanced environment variables:
 
 ```powershell
 $env:VIC3_MOD_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\MyMapMod"
-$env:VIC3_REFERENCE_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\Victoria-3-lite-map-editor\tools\vanilla_1_13_6_reference\game"
+$env:VIC3_REFERENCE_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\Victoria-3-lite-map-editor\tools\vanilla_1_13_7_reference\game"
 node server.js --open --port=8799
 ```
 
@@ -222,7 +222,7 @@ map_data/state_regions/*.txt
 common/history/states/00_states.txt
 ```
 
-The bundled reference data and the editor itself are not deleted. After reset, the editor falls back to vanilla 1.13.6 reference data.
+The bundled reference data and the editor itself are not deleted. After reset, the editor falls back to vanilla 1.13.7 reference data.
 
 Reset uses the same loading overlay while it sends the reset request, reloads the vanilla data, rescans the map image, and redraws the editor.
 
@@ -235,7 +235,7 @@ Reset uses the same loading overlay while it sends the reset request, reloads th
 | `common/history/states/00_states.txt` | Write when needed | Initial state ownership sync for moved owned provinces. |
 | `map_data/provinces.png` | Read-only | RGB province color map used for visual picking and boundaries. |
 | `map_data/default.map` | Read-only | Used to detect reserved lake provinces. |
-| `tools/vanilla_1_13_6_reference/game` | Read-only reference | Bundled vanilla 1.13.6 fallback data. |
+| `tools/vanilla_1_13_7_reference/game` | Read-only reference | Bundled vanilla 1.13.7 fallback data. |
 | `tools/state-map-viewer/server.js` | Local tool code | Node.js HTTP server and Victoria 3 file parser/writer. |
 | `tools/state-map-viewer/public/*` | Local tool UI | Browser interface, map rendering, draft validation, and interactions. |
 
@@ -303,13 +303,13 @@ If the launcher was moved to an ASCII `gameDataPath`, logs may still be under th
 
 ### Updating the Reference Data for Another Game Version
 
-This package bundles vanilla 1.13.6 data. For another Victoria 3 version, replace the reference folder with files from that exact version:
+This package bundles vanilla 1.13.7 data. For another Victoria 3 version, replace the reference folder with files from that exact version:
 
 ```text
-tools/vanilla_1_13_6_reference/game/map_data/default.map
-tools/vanilla_1_13_6_reference/game/map_data/provinces.png
-tools/vanilla_1_13_6_reference/game/map_data/state_regions/*.txt
-tools/vanilla_1_13_6_reference/game/common/history/states/00_states.txt
+tools/vanilla_1_13_7_reference/game/map_data/default.map
+tools/vanilla_1_13_7_reference/game/map_data/provinces.png
+tools/vanilla_1_13_7_reference/game/map_data/state_regions/*.txt
+tools/vanilla_1_13_7_reference/game/common/history/states/00_states.txt
 ```
 
 You may rename the folder, but then start the server with `VIC3_REFERENCE_ROOT` pointing at the new reference root.
@@ -333,7 +333,7 @@ http://127.0.0.1:8799/
 Confirm:
 
 - `schemaVersion` is current in `/api/map-data`.
-- The page loads 781 vanilla states for the bundled 1.13.6 reference.
+- The page loads 781 vanilla states for the bundled 1.13.7 reference.
 - A test edit writes the expected `map_data/state_regions/*.txt` file.
 - `Reset Vanilla` removes generated overrides.
 - No generated personal logs, saves, or cache files are committed.
@@ -367,7 +367,7 @@ map_data/state_regions/*.txt
 
 它可以：
 
-- 优先读取当前 mod 中的 active 文件，没有 active 文件时回退到内置原版 1.13.6 reference。
+- 优先读取当前 mod 中的 active 文件，没有 active 文件时回退到内置原版 1.13.7 reference。
 - 在原版 province 色彩图上显示所有 state region 和 province。
 - 选择一个 state 后，只显示该 state 和当前 free province，其他 state 会被遮罩。
 - 把 selected state 内的 province 移到 free pool。
@@ -385,13 +385,13 @@ map_data/state_regions/*.txt
 - 修改或绘制 `provinces.png`。
 - 修改 terrain、heightmap、rivers、adjacencies、strategic regions、spline networks。
 - 创建全新的 state ID、localization、hub locator 或 strategic region 归属。
-- 保证兼容 Victoria 3 1.13.6 以外的版本。
+- 保证兼容 Victoria 3 1.13.7 以外的版本。
 
 ### 环境要求
 
 - Windows、macOS 或 Linux。
 - Node.js 18 或更高版本，推荐 Node.js 20+。
-- 如果需要完全匹配内置 reference，请使用 Victoria 3 1.13.6。
+- 如果需要完全匹配内置 reference，请使用 Victoria 3 1.13.7。
 - 本地 mod 路径必须只包含 ASCII 字符。
 
 重要：Victoria 3 可能会显示本地 mod 已启用，但实际无法加载非 ASCII 路径下的某些文件。这是 Victoria 3 wiki 记录过的本地 mod 问题。如果你的 `Documents` 路径包含中文、重音字符、西里尔字符、日文、韩文或其他非 ASCII 字符，请使用纯 ASCII 路径，例如：
@@ -438,7 +438,7 @@ C:/Users/YourName/Paradox Interactive/Victoria 3/mod/Victoria-3-lite-map-editor/
   README.md
   tools/
     state-map-viewer/
-    vanilla_1_13_6_reference/
+    vanilla_1_13_7_reference/
 ```
 
   如果你要创建一个新的独立本地 mod，可以复制整个文件夹。如果你要把编辑器加入已有 mod，请复制 `tools/`，并按需要复制 `start-editor.cmd`，但保留该 mod 原本的 `.metadata/metadata.json`。覆盖已有 mod 的 metadata 会改变 Paradox Launcher 识别这个 mod 的方式，可能导致游戏加载的文件夹和编辑器保存的文件夹不是同一个。
@@ -484,7 +484,7 @@ node server.js --open --port=8799
 
 ```powershell
 $env:VIC3_MOD_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\MyMapMod"
-$env:VIC3_REFERENCE_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\Victoria-3-lite-map-editor\tools\vanilla_1_13_6_reference\game"
+$env:VIC3_REFERENCE_ROOT="C:\Users\YourName\Paradox Interactive\Victoria 3\mod\Victoria-3-lite-map-editor\tools\vanilla_1_13_7_reference\game"
 node server.js --open --port=8799
 ```
 
@@ -561,7 +561,7 @@ map_data/state_regions/*.txt
 common/history/states/00_states.txt
 ```
 
-它不会删除工具本身，也不会删除内置 reference。Reset 后，编辑器会重新回退到原版 1.13.6 reference 地图。
+它不会删除工具本身，也不会删除内置 reference。Reset 后，编辑器会重新回退到原版 1.13.7 reference 地图。
 
 Reset 也会显示加载遮罩和进度，覆盖发送请求、重新加载原版数据、扫描地图图像、重绘编辑器这些阶段。
 
@@ -574,7 +574,7 @@ Reset 也会显示加载遮罩和进度，覆盖发送请求、重新加载原�
 | `common/history/states/00_states.txt` | 需要时写入 | 同步被移动 province 的开局 ownership。 |
 | `map_data/provinces.png` | 只读 | RGB province 色彩图，用于地图点击、边界和可视化。 |
 | `map_data/default.map` | 只读 | 用于识别 reserved lake province。 |
-| `tools/vanilla_1_13_6_reference/game` | 只读 reference | 内置原版 1.13.6 fallback 数据。 |
+| `tools/vanilla_1_13_7_reference/game` | 只读 reference | 内置原版 1.13.7 fallback 数据。 |
 | `tools/state-map-viewer/server.js` | 本地工具代码 | Node.js HTTP server、Vic3 文件解析和写入。 |
 | `tools/state-map-viewer/public/*` | 本地网页 UI | 浏览器界面、地图渲染、草稿校验和交互。 |
 
@@ -642,13 +642,13 @@ Get-Content "$env:USERPROFILE\Documents\Paradox Interactive\Victoria 3\content_l
 
 ### 更新到其他 Victoria 3 版本
 
-本包内置的是 vanilla 1.13.6 数据。如果要支持其他版本，请用完全相同游戏版本的文件替换 reference：
+本包内置的是 vanilla 1.13.7 数据。如果要支持其他版本，请用完全相同游戏版本的文件替换 reference：
 
 ```text
-tools/vanilla_1_13_6_reference/game/map_data/default.map
-tools/vanilla_1_13_6_reference/game/map_data/provinces.png
-tools/vanilla_1_13_6_reference/game/map_data/state_regions/*.txt
-tools/vanilla_1_13_6_reference/game/common/history/states/00_states.txt
+tools/vanilla_1_13_7_reference/game/map_data/default.map
+tools/vanilla_1_13_7_reference/game/map_data/provinces.png
+tools/vanilla_1_13_7_reference/game/map_data/state_regions/*.txt
+tools/vanilla_1_13_7_reference/game/common/history/states/00_states.txt
 ```
 
 也可以重命名 reference 文件夹，但启动 server 时需要用 `VIC3_REFERENCE_ROOT` 指向新的 reference root。
@@ -672,7 +672,7 @@ http://127.0.0.1:8799/
 确认：
 
 - `/api/map-data` 的 `schemaVersion` 是当前版本。
-- 页面能用内置 1.13.6 reference 加载 781 个 vanilla states。
+- 页面能用内置 1.13.7 reference 加载 781 个 vanilla states。
 - 测试编辑会写入预期的 `map_data/state_regions/*.txt`。
 - `Reset Vanilla` 能删除生成的 override。
 - 不要提交个人 logs、save games、cache、crash dump。

@@ -13,8 +13,8 @@ const SHOULD_OPEN = process.argv.includes("--open");
 // the tool into an existing mod without changing scripts or environment vars.
 const toolRoot = __dirname;
 const modRoot = path.resolve(process.env.VIC3_MOD_ROOT || findNearestModRoot(toolRoot));
-// Bundled vanilla 1.13.6 data lets the editor work before the mod contains any map overrides.
-const referenceRoot = path.resolve(process.env.VIC3_REFERENCE_ROOT || path.join(modRoot, "tools", "vanilla_1_13_6_reference", "game"));
+// Bundled vanilla 1.13.7 data lets the editor work before the mod contains any map overrides.
+const referenceRoot = path.resolve(process.env.VIC3_REFERENCE_ROOT || path.join(modRoot, "tools", "vanilla_1_13_7_reference", "game"));
 const publicRoot = path.join(toolRoot, "public");
 const historyStatesRelativePath = path.join("common", "history", "states", "00_states.txt");
 const historyStatesZipPath = historyStatesRelativePath.replace(/\\/g, "/");
@@ -699,7 +699,7 @@ function validateProposedStates(states) {
       seenInState.add(province);
 
       if (!referenceOrigins.has(province)) {
-        errors.push(`${province} is not a 1.13.6 state-region province; reserved map colors such as lakes cannot be assigned to states.`);
+        errors.push(`${province} is not a 1.13.7 state-region province; reserved map colors such as lakes cannot be assigned to states.`);
       }
 
       const origin = referenceOrigins.get(province);
@@ -733,7 +733,7 @@ function validateProposedStates(states) {
 
   for (const province of referenceOrigins.keys()) {
     if (!provinceToState.has(province)) {
-      errors.push(`${province} would be left free; every non-lake 1.13.6 state-region province must belong to exactly one state before saving.`);
+      errors.push(`${province} would be left free; every non-lake 1.13.7 state-region province must belong to exactly one state before saving.`);
     }
   }
 

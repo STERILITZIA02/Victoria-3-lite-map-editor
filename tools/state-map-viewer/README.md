@@ -19,7 +19,7 @@ http://127.0.0.1:8793
 
 The viewer reads the active mod root first. If `map_data/state_regions` or
 `map_data/provinces.png` does not exist in the active mod root, it falls back to
-`tools/vanilla_1_13_6_reference/game`.
+`tools/vanilla_1_13_7_reference/game`.
 
 This keeps an unmodified mod loadable while still providing a complete map
 inspection tool for future province/state edits.

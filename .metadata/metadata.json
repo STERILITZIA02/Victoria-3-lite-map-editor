@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "game_id": "victoria3",
   "supported_game_version": "1.13.*",
-  "short_description": "A lightweight local Victoria 3 state-region province editor with vanilla 1.13.6 reference data.",
+  "short_description": "A lightweight local Victoria 3 state-region province editor with vanilla 1.13.7 reference data.",
   "tags": ["Utilities", "Map"],
   "relationships": [],
   "game_custom_data": {
